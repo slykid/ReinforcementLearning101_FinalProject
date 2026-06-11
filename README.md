@@ -172,6 +172,15 @@ tensorboard --logdir logs/                   # 브라우저에서 SAC/TD3/PPO �
 
 ## 9. 산출물
 
+> **학습된 모델 다운로드 / 재사용**: 학습이 완료된 모델(SAC / TD3 / PPO)은 저장소의 `models/`
+> 디렉터리에 `.zip` 형태로 포함되어 있습니다. 저장소를 clone/다운로드하면 **별도 학습 없이 바로
+> 평가에 사용**할 수 있습니다.
+> ```python
+> from stable_baselines3 import SAC
+> model = SAC.load("models/sac_best/best_model")   # 학습된 정책 로드
+> ```
+> 또는 `python evaluate.py` 를 실행하면 `models/` 의 모델을 자동으로 불러와 베이스라인과 비교합니다.
+
 | 경로 | 내용 |
 |---|---|
 | `models/{sac,td3,ppo}_best/best_model.zip` | 평가 기준 best 모델 |
