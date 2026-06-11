@@ -79,34 +79,96 @@
 
 ## 8. 실행 방법
 
+### 8.1 환경 준비
+
+Python 3.13 기준이며, `requirements.txt`에 학습·평가에 실제 사용한 버전이 고정되어 있습니다.
+
 ```bash
-# 환경 준비 (venv)
-bash setup.sh && source venv/bin/activate
-# 또는 conda/anaconda 환경에서:  pip install -r requirements.txt
+# (1) 가상환경 생성 및 활성화
+python3 -m venv venv
+source venv/bin/activate            # Windows: venv\Scripts\activate
 
-# 동작 확인
-python simulator.py      # 시뮬레이터 (고정 제어 10 step)
-python env.py            # 환경 (랜덤 에이전트 1 에피소드)
+# (2) 의존성 설치
+pip install --upgrade pip
+pip install -r requirements.txt
 
-# 학습 (기본 500k 스텝)
-python train.py                       # SAC만
-python train.py --algo td3            # TD3만
-python train.py --algo ppo            # PPO만
-python train.py --algo all            # 3종 순차 학습 + 비교 그래프
-python train.py --algo all --timesteps 1000000   # 1M 스텝 학습
-python train.py --plot                # 기존 로그로 비교 그래프만 재생성
-
-# 평가 (존재하는 모델 자동 포함)
-python evaluate.py                    # 기본 20 에피소드
-python evaluate.py --episodes 1000    # 1,000 에피소드 비교 평가
-
-# 학습 모니터링
-tensorboard --logdir logs/
+# (선택) conda/anaconda 환경을 쓰는 경우
+# conda create -n dc-cooling python=3.13 -y && conda activate dc-cooling
+# pip install -r requirements.txt
 ```
 
-> ⚠️ **실행 환경 주의**: 모델 저장/로드는 numpy 버전에 민감합니다. **학습과 평가는 반드시
-> 동일한 파이썬 환경**(예: 동일 venv 또는 동일 anaconda)에서 실행하세요. 환경이 다르면
-> 모델 로드 시 `ModuleNotFoundError: numpy._core...` 등이 발생할 수 있습니다.
+> ⚠️ **실행 환경 주의**: 모델 `.zip` 저장/로드는 numpy / stable-baselines3 버전에 민감합니다.
+> **학습과 평가는 반드시 동일한 파이썬 환경**(같은 venv 또는 같은 conda)에서 실행하세요.
+> 환경이 다르면 모델 로드 시 `ModuleNotFoundError: numpy._core...` 등이 발생할 수 있습니다.
+> Linux에서 한글 그래프 폰트가 깨지면 `apt install fonts-nanum` 후 실행하세요.
+
+### 8.2 동작 확인 (학습 전 빠른 점검)
+
+```bash
+python simulator.py    # 물리 시뮬레이터: 고정 제어(팬·냉수 50%) 10 step 출력
+python env.py          # Gym 환경: 랜덤 에이전트 1 에피소드 → 총보상/평균PUE 출력
+```
+
+### 8.3 학습 (`train.py`)
+
+기본 500,000 스텝이며 `--timesteps`로 조정합니다. 산출물은 `models/`, 학습 로그는 `logs/`에 저장됩니다.
+
+```bash
+python train.py                              # SAC만 학습 (기본)
+python train.py --algo td3                   # TD3만
+python train.py --algo ppo                   # PPO만
+python train.py --algo all                   # SAC→TD3→PPO 순차 학습 + 비교 그래프 저장
+python train.py --algo all --timesteps 1000000   # 1M 스텝으로 학습
+python train.py --plot                       # 학습 없이 기존 로그로 비교 그래프만 재생성
+```
+
+| 인자 | 기본값 | 설명 |
+|---|---|---|
+| `--algo` | `sac` | `sac` / `td3` / `ppo` / `all` 중 선택 |
+| `--timesteps` | `500000` | 학습 총 스텝 수 |
+| `--plot` | (off) | 학습 생략, `evaluations.npz` 로 비교 그래프만 생성 |
+
+### 8.4 평가 (`evaluate.py`)
+
+학습된 RL 모델(존재하는 것만 자동 포함)을 베이스라인(Rule-based / Fixed-50% / Fixed-80%)과 비교합니다.
+
+```bash
+python evaluate.py                           # 기본 20 에피소드, 모든 모델 자동 평가
+python evaluate.py --episodes 1000           # 1,000 에피소드로 정밀 비교
+python evaluate.py --sac-model models/sac_best/best_model   # 특정 모델 경로 지정
+```
+
+| 인자 | 기본값 | 설명 |
+|---|---|---|
+| `--episodes` | `20` | 정책당 평가 에피소드 수 |
+| `--sac-model` / `--td3-model` / `--ppo-model` | `models/{algo}_best/best_model` | 평가할 모델 경로 (`.zip` 생략) |
+
+> 평가할 모델이 하나도 없으면 먼저 `python train.py --algo all` 을 실행하라는 안내 후 종료됩니다.
+
+### 8.5 보강 실험 (`experiments.py`) — 보고서용
+
+다중 시드 신뢰구간(A)과 PPO learning_rate 스윕(B)을 실행합니다. **중단-안전**: 각 run이 끝날 때마다
+`results/experiments_runs.jsonl` 에 즉시 기록되어, 중간에 멈춰도 다시 실행하면 완료분은 건너뛰고 이어서 진행합니다.
+
+```bash
+python experiments.py --timesteps 200000 --seeds 0 1 2   # 본 실험 (이어하기 자동)
+python experiments.py --smoke                            # 빠른 동작 확인 (2k 스텝, seed 0·1)
+python experiments.py --summarize-only                   # 학습 없이 요약(json)만 재생성
+```
+
+| 인자 | 기본값 | 설명 |
+|---|---|---|
+| `--timesteps` | `200000` | run당 학습 스텝 수 |
+| `--seeds` | `0 1 2` | 사용할 시드 목록 |
+| `--eval-episodes` | `150` | run당 평가 에피소드 수 |
+| `--smoke` | (off) | 디버그용 초경량 실행 |
+| `--summarize-only` | (off) | jsonl 로그만으로 요약 재생성 |
+
+### 8.6 학습 모니터링
+
+```bash
+tensorboard --logdir logs/                   # 브라우저에서 SAC/TD3/PPO 학습 곡선 확인
+```
 
 ## 9. 산출물
 
@@ -116,9 +178,11 @@ tensorboard --logdir logs/
 | `models/{sac,td3,ppo}_final.zip` | 최종 스텝 모델 |
 | `logs/eval_*/evaluations.npz` | 학습 중 평가 보상 추이 |
 | `logs/tb_*/` | TensorBoard 로그 |
-| `results/algo_comparison.png` | 알고리즘별 학습 수렴 곡선 |
-| `results/comparison.png` | 정책별 PUE·온도이탈률·냉각전력 막대 비교 |
-| `results/timeseries.png` | 대표 에피소드 24시간 시계열 비교 |
+| `results/algo_comparison.png` | (train.py) 알고리즘별 학습 수렴 곡선 |
+| `results/comparison.png` | (evaluate.py) 정책별 PUE·온도이탈률·냉각전력 막대 비교 |
+| `results/timeseries.png` | (evaluate.py) 대표 에피소드 24시간 시계열 비교 |
+| `results/experiments_runs.jsonl` | (experiments.py) run별 결과 누적 로그 — 이어하기 기준 |
+| `results/experiments.json` | (experiments.py) 다중시드·lr 스윕 요약 (평균±95% CI) |
 
 ## 10. 평가 지표 정의
 
